@@ -6,6 +6,7 @@
 typedef struct sockaddr SA;
 typedef unsigned int ui;
 typedef unsigned char byte;
+typedef unsigned short si;
 // #include "../config.h"
 
 /* if anything changes in this list of #include must change acsite.m4 also , for configuration tests.
@@ -22,6 +23,7 @@ typedef unsigned char byte;
 #include<netdb.h>
 #include<signal.h>
 #include<stdio.h>
+#include"stdbool.h"
 #include<stdlib.h>
 #include<string.h>
 #include<sys/stat.h>
@@ -66,6 +68,15 @@ typedef unsigned char byte;
 #include<pthread.h>
 #endif 
 #endif 
+
+typedef struct{
+    byte* hello;
+    byte* name;
+    long file_size;
+    si buffer_len;
+    FILE* fp;
+}file_info;
+
 
 void err_quit(char*);
 void str_cli(FILE *fp, int sockfd);
@@ -118,6 +129,20 @@ ssize_t udp_writen(int fd,const void* vptr, size_t n){
 }
 
 
+void str_echo_udp(int sockfd, SA* cli_addr,socklen_t clilen){
+    socklen_t len;
+    int n;
+    char buffer[MAXLINE];
+    while(1){
+        len = clilen;
+        n = recvfrom(sockfd,buffer,MAXLINE,0,cli_addr,&len);
+        buffer[n]=0;
+        printf("buffer = %s\n", buffer);
+        printf("n = %d\n", n);
+        if((n = sendto(sockfd,buffer,n,0,cli_addr,clilen))<0)err_quit("sendto in str_echo_udp: ");
+        printf("n = %d\n", n);
+    }
+}
 
 ssize_t writen(int fd,const void* vptr, size_t n){
     size_t nleft;
@@ -166,20 +191,18 @@ again:
     err_quit("str_echo: read error");
 }
 
-
-void str_echo_udp(int sockfd){
-    ssize_t n;
-    char buffer[MAXLINE];
-    struct sockaddr_in cli_addr;
-    socklen_t clilen;
-    bzero(&cli_addr,sizeof(cli_addr));
-loop:
-    while((n = recvfrom(sockfd,buffer,MAXLINE,0,NULL,NULL))>0)
-        buffer[n]=0,send(sockfd,buffer,n,0);
-    if(n<0 && errno == EINTR)
-        goto loop;
-    else if(n<0)err_quit("recvfrom error => ");
+void pstring(byte* s,ui len){
+    for(int i=0;i<len;i++)printf("%c",s[i]);
 }
+
+byte* mystrcpy(byte* a,byte* b,ui len)
+{
+    for(ui i=0;i<len;i++){
+        a[i] = b[i];
+    }
+    return a;
+}
+
 byte* xor(byte* a, byte* b,ui len){
     if(!a || !b)return NULL;
     byte* output = (byte*) malloc(sizeof(byte)*len);
@@ -192,101 +215,104 @@ byte* xor(byte* a, byte* b,ui len){
 
 
 
-void recover3(byte** a, ui len){
-    if(a[1]){
-        if(a[2]){
-            if(a[3])return; 
-            else if(a[5])a[3] = xor(a[2],a[5],len);
-            else if(a[6])a[3] = xor(a[1],a[6],len);  
-            else a[3] = xor(xor(a[1],a[2],len),a[7],len);
+bool recover3(byte** a, ui len,bool* avail_packets){
+    byte cnt=0;
+    if(cnt>3)return false;
+    if(avail_packets[0]){
+        if(avail_packets[1]){
+            if(avail_packets[2])cnt = 1; 
+            else if(avail_packets[4])a[2] = xor(a[1],a[4],len);
+            else if(avail_packets[5])a[2] = xor(a[0],a[5],len);  
+            else a[2] = xor(xor(a[0],a[1],len),a[6],len);
         }
-        else if(a[3]){
-            if(a[4])a[2] = xor(a[1],a[4],len); 
-            else if(a[5])a[2] = xor(a[3],a[5],len);
-            else a[2] = xor(a[7],xor(a[1],a[3],len),len);
+        else if(avail_packets[2]){
+            if(avail_packets[3])a[1] = xor(a[0],a[3],len); 
+            else if(avail_packets[4])a[1] = xor(a[2],a[4],len);
+            else a[1] = xor(a[6],xor(a[0],a[2],len),len);
         }
-        else if(a[4]){
-            a[2]=xor(a[1],a[4],len);
-            if(a[5])a[3]=xor(a[2],a[5],len);
-            else if(a[6])a[3]=xor(a[1],a[6],len);
-            else a[3]=xor(a[7],xor(a[1],a[2],len),len);
+        else if(avail_packets[3]){
+            a[1]=xor(a[0],a[3],len);
+            if(avail_packets[4])a[2]=xor(a[1],a[4],len);
+            else if(avail_packets[5])a[2]=xor(a[0],a[5],len);
+            else a[2]=xor(a[6],xor(a[0],a[1],len),len);
         }
         else{
-            a[3] = xor(a[6],a[1],len);
-            a[2] = xor(a[5],a[3],len);
-        }
-    }
-    else if(a[2]){
-        if(a[3]){
-            if(a[4]) a[1] = xor(a[2],a[4],len);
-            else if(a[6]) a[1] = xor(a[6],a[3],len);
-            else a[1] = xor(a[7],xor(a[1],a[2],len),len);
-        }
-        else if(a[4]){
+            a[2] = xor(a[5],a[0],len);
             a[1] = xor(a[4],a[2],len);
-            if(a[5]) a[3] = xor(a[5],a[2],len); 
-            else if(a[6]) a[3] = xor(a[6],a[1],len);
-            else a[3] = xor(a[7],xor(a[1],a[2],len),len);
-        }
-        else{
-            a[3] = xor(a[5],a[2],len);
-            a[1] = xor(a[6],a[3],len);
         }
     }
-    else if(a[3]){
-        if(a[4]){
-            if(a[5]) a[2] = xor(a[5],a[3],len),a[1] = xor(a[4],a[2],len),printf("here\n");
+    else if(avail_packets[1]){
+        if(avail_packets[2]){
+            if(avail_packets[3]) a[0] = xor(a[1],a[3],len);
+            else if(avail_packets[5]) a[0] = xor(a[5],a[2],len);
+            else a[0] = xor(a[6],xor(a[0],a[1],len),len);
+        }
+        else if(avail_packets[3]){
+            a[0] = xor(a[3],a[1],len);
+            if(avail_packets[4]) a[2] = xor(a[4],a[1],len); 
+            else if(avail_packets[5]) a[2] = xor(a[5],a[0],len);
+            else a[2] = xor(a[6],xor(a[0],a[1],len),len);
         }
         else{
-            a[2] = xor(a[5],a[3],len);
-            a[1] = xor(a[6],a[3],len);
+            a[2] = xor(a[4],a[1],len);
+            a[0] = xor(a[5],a[2],len);
+        }
+    }
+    else if(avail_packets[2]){
+        if(avail_packets[3]){
+            if(a[4]) a[1] = xor(a[4],a[2],len),a[0] = xor(a[3],a[1],len);
+        }
+        else{
+            a[1] = xor(a[4],a[2],len);
+            a[0] = xor(a[5],a[2],len);
         }
     }
     else{
-        a[1] = xor(a[5],a[7],len);
+        a[0] = xor(a[4],a[6],len);
+        a[1] = xor(a[3],a[0],len);
         a[2] = xor(a[4],a[1],len);
-        a[3] = xor(a[5],a[2],len);
     }
+    return true;
 }
 
-void create_xor(byte** packets,ui len){
+void create_xor(byte** packets,ui len,int inc){
+    packets[3] = xor(packets[0],packets[1],len);
+    packets[3][0]=3+inc;
     packets[4] = xor(packets[1],packets[2],len);
-    packets[4][0]=4;
-    packets[5] = xor(packets[2],packets[3],len);
-    packets[5][0]=5;
-    packets[6] = xor(packets[1],packets[3],len);
-    packets[6][0]=6;
-    packets[7] = xor(packets[4],packets[3],len);
-    packets[7][0]=7;
+    packets[4][0]=4+inc;
+    packets[5] = xor(packets[0],packets[2],len);
+    packets[5][0]=5+inc;
+    packets[6] = xor(packets[3],packets[2],len);
+    packets[6][0]=6+inc;
 }
-void pstring(byte* s,ui len){
-    for(int i=1;i<len;i++)printf("%c",s[i]);
-    printf("\n");
-}
-/*
-int main(){
-    srand(time(NULL));
-    byte **packets = (byte**) calloc(sizeof(byte*),8);
-    for(int i=0;i<8;i++)packets[i]=(byte*) calloc(100, sizeof(byte));
-    byte r;
-    FILE* f = fopen("test.txt","r");
-    for(int i=1;i<=3;i++){
-        ui j=1;
-        r = fgetc(f);
-        packets[i][0]=i;
-        while(r!=10){
-            packets[i][j++]=r;
-            r = fgetc(f);
-        }
-    }
-    ui n = strlen(packets[1]);
-    create_xor(packets,n);
-    packets[2]=NULL;
-    packets[3]=NULL;
-    packets[4]=NULL;
-    recover3(packets,n);
-    for(int i=1;i<4;i++)pstring(packets[i],n);
-    return 0;
-}
-*/
 
+file_info* init_file_info(){
+
+}
+
+//
+// int main(){
+//     srand(time(NULL));
+//     byte **packets = (byte**) calloc(sizeof(byte*),8);
+//     for(int i=0;i<8;i++)packets[i]=(byte*) calloc(100, sizeof(byte));
+//     byte r;
+//     FILE* f = fopen("test.txt","r");
+//     for(int i=1;i<=3;i++){
+//         ui j=1;
+//         r = fgetc(f);
+//         packets[i][0]=i;
+//         while(r!=10){
+//             packets[i][j++]=r;
+//             r = fgetc(f);
+//         }
+//     }
+//     ui n = strlen(packets[1]);
+//     create_xor(packets,n);
+//     packets[1]=NULL;
+//     packets[3]=NULL;
+//     packets[4]=NULL;
+//     recover3(packets,n);
+//     for(int i=1;i<4;i++)pstring(packets[i],n);
+//     return 0;
+// }
+//

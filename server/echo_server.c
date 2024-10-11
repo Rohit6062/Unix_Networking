@@ -12,7 +12,7 @@ int main(int argc, char **argv){
     servaddr.sin_port = htons(SERV_PORT);
     bind(listenfd, (SA *) &servaddr, sizeof(servaddr));
     listen(listenfd, LISTENQ);
-    for ( ; ; ){
+    for (;;){
         clilen = sizeof(cliaddr);
         connfd = accept(listenfd, (SA *) &cliaddr, &clilen);
         if ( (childpid = fork()) == 0) { /* child process */

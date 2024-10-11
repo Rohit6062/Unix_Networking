@@ -11,18 +11,20 @@ int main(int argc,char** argv){
     if(argc<2){
         err_quit("Ip Not provided");
     }
-    sockfd = socket(AF_INET,SOCK_DGRAM,0);
     bzero(&servAddr,sizeof(servAddr));
     servAddr.sin_family = AF_INET;
     servAddr.sin_port = htons(SERV_PORT);
     if(inet_pton(AF_INET,argv[1],(SA*)&servAddr.sin_addr)<0)err_quit("inet err"); 
-    if(connect(sockfd,(SA*)&servAddr,sizeof(servAddr))<0)err_quit("connect err");
+    sockfd = socket(AF_INET,SOCK_DGRAM,0);
+    // if(connect(sockfd,(SA*)&servAddr,sizeof(servAddr))<0)err_quit("connect err");
     printf("Setup Done\n");
     while((n = fread(send_buffer,1,1024,f))>0){
         send_buffer[n]=0;
         if((n = sendto(sockfd,send_buffer,n,0,(SA*)&servAddr,sizeof(servAddr)))<0)err_quit("sendto err");
+        printf("%d\n",n);
         total_send+=n;
-        if((n = recvfrom(sockfd,rec_buffer,sizeof(recvfrom),0,NULL,NULL)<0))err_quit("recvfrom err");
+        if((n = recvfrom(sockfd,rec_buffer,1024,0,NULL,NULL))<0)err_quit("recvfrom err");
+        printf("m = %d\n", n);
         rec_buffer[n] = 0;
         fputs(rec_buffer,stdout);
     }
