@@ -46,7 +46,7 @@ void send_file(FILE* file_to_send,int sockfd,const SA* servaddr,socklen_t servle
 }
 
 int main(int argc,char** argv){
-    FILE* f = fopen("vid","r");
+    FILE* f = fopen("test.txt","r");
     int sockfd;
     struct sockaddr_in servaddr;
     if(argc != 2)
